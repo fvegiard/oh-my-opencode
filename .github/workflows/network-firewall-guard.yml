@@ -1,0 +1,131 @@
+name: Network Firewall Guard
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+  push:
+    branches: [master, dev]
+    paths:
+      - '.github/workflows/**'
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Scan workflows for sandbox-blocked patterns
+        id: scan
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          FINDINGS=""
+          FILES=$(find .github/workflows -name "*.yml" | sort)
+
+          # Patterns known to fail in Codex/restricted sandboxes
+          declare -A PATTERNS
+          PATTERNS["gh auth status"]="gh auth status makes an API call to api.github.com — use '|| true' or remove; login via --with-token is sufficient"
+          PATTERNS["posthog"]="PostHog telemetry (us.i.posthog.com) is blocked in Codex sandboxes — set POSTHOG_DISABLED=1"
+          PATTERNS["DO_NOT_TRACK"]=""   # presence = good, skip
+          PATTERNS["npx -y lazycodex"]="lazycodex-ai npx call triggers PostHog telemetry — ensure DO_NOT_TRACK=1 is set"
+          PATTERNS["curl.*opencode.ai/install"]="opencode install script makes outbound calls — may be blocked in locked-down runners"
+          PATTERNS["forceExit"]="forceExit in test runner = open handles (usually from unresolved telemetry connections)"
+
+          for FILE in $FILES; do
+            for PATTERN in "gh auth status" "us.i.posthog.com" "npx -y lazycodex" "curl.*opencode.ai/install"; do
+              if grep -qiE "$PATTERN" "$FILE"; then
+                # Check if DO_NOT_TRACK already set in same file
+                if [[ "$PATTERN" == *"posthog"* ]] || [[ "$PATTERN" == *"lazycodex"* ]]; then
+                  if grep -q "DO_NOT_TRACK" "$FILE" && grep -q "POSTHOG_DISABLED" "$FILE"; then
+                    continue  # already mitigated
+                  fi
+                fi
+                LINE=$(grep -inE "$PATTERN" "$FILE" | head -1)
+                FINDINGS="${FINDINGS}\n🚨 \`${FILE}\`: \`${LINE}\`"
+                case "$PATTERN" in
+                  "gh auth status")
+                    FINDINGS="${FINDINGS}\n   → **Fix**: append \`|| echo '::warning::...'\` (non-fatal) — api.github.com is blocked in Codex sandbox"
+                    ;;
+                  *"posthog"*)
+                    FINDINGS="${FINDINGS}\n   → **Fix**: add \`POSTHOG_DISABLED: \"1\"\` and \`DO_NOT_TRACK: \"1\"\` to job \`env:\`"
+                    ;;
+                  *"lazycodex"*)
+                    FINDINGS="${FINDINGS}\n   → **Fix**: add \`DO_NOT_TRACK: \"1\"\` to this job's \`env:\` to suppress telemetry"
+                    ;;
+                  *"opencode.ai/install"*)
+                    FINDINGS="${FINDINGS}\n   → **Info**: ensure outbound curl is allowed or use cached install step"
+                    ;;
+                esac
+              fi
+            done
+          done
+
+          if [[ -z "$FINDINGS" ]]; then
+            echo "findings=" >> "$GITHUB_OUTPUT"
+            echo "clean=true" >> "$GITHUB_OUTPUT"
+          else
+            # Write multiline output safely
+            {
+              echo "findings<<EOF"
+              echo -e "$FINDINGS"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            echo "clean=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write summary
+        if: always()
+        run: |
+          {
+            echo "## 🔍 Network Firewall Guard"
+            echo ""
+            if [[ "${{ steps.scan.outputs.clean }}" == "true" ]]; then
+              echo "✅ **No sandbox-blocking patterns detected** in workflow files."
+            else
+              echo "⚠️ **Potential sandbox-blocking patterns found:**"
+              echo ""
+              echo -e "${{ steps.scan.outputs.findings }}"
+              echo ""
+              echo "### Why this matters"
+              echo "GitHub Codex / restricted runners block outbound calls to \`api.github.com\`, \`us.i.posthog.com\`, etc."
+              echo "These calls cause \`exit code 1\` and \`forceExit\` failures that look like test failures but are network issues."
+              echo ""
+              echo "### Standard fixes"
+              echo "- \`gh auth status\` → append \`|| echo '::warning::blocked'\`"
+              echo "- Telemetry → add \`DO_NOT_TRACK: \"1\"\` and \`POSTHOG_DISABLED: \"1\"\` to job \`env:\`"
+              echo "- PostHog in test runner → set \`ANTHROPIC_DISABLE_TELEMETRY: \"1\"\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment on PR with findings
+        if: github.event_name == 'pull_request' && steps.scan.outputs.clean == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          FINDINGS: ${{ steps.scan.outputs.findings }}
+        run: |
+          gh pr comment "$PR_URL" --body "$(cat <<'EOF'
+          ## ⚠️ Network Firewall Guard — Sandbox-blocking patterns detected
+
+          The following patterns in your workflow files are known to fail in Codex / restricted GitHub Actions runners:
+
+          ${{ steps.scan.outputs.findings }}
+
+          ### Standard fixes
+          - `gh auth status` → append `|| echo '::warning::blocked'` (non-fatal)
+          - Telemetry calls → add `DO_NOT_TRACK: "1"` and `POSTHOG_DISABLED: "1"` to job `env:`
+
+          > Auto-detected by `.github/workflows/network-firewall-guard.yml`
+          EOF
+          )"
+
+      - name: Fail if blocking patterns found
+        if: steps.scan.outputs.clean == 'false'
+        run: |
+          echo "::error::Sandbox-blocking network patterns found in workflow files. See summary for details."
+          exit 1
