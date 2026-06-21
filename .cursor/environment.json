@@ -1,3 +1,20 @@
 {
-  "install": "bash script/agent/setup.sh"
+    "install": "bash script/agent/setup.sh",
+    "environment": {
+          "ANTHROPIC_API_KEY": {
+                  "description": "Anthropic API key for Claude-based QA and OpenCode sessions"
+          },
+          "OPENAI_API_KEY": {
+                  "description": "OpenAI API key for Codex-based QA sessions"
+          },
+          "GEMINI_API_KEY": {
+                  "description": "Google Gemini API key (optional, for Gemini-backed QA sessions)"
+          },
+          "OPENCODE_SERVER_PASSWORD": {
+                  "description": "Optional password for `opencode serve`-based QA (see opencode-qa skill)"
+          },
+          "OMO_AGENT_FORCE_BUILD": {
+                  "description": "Set to 1 to force `bun run build` even when dist/index.js already exists"
+          }
+    }
 }
