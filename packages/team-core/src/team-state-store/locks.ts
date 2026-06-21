@@ -69,7 +69,9 @@ async function acquireLock(lockPath: string, ownerTag: string, staleAfterMs: num
       return
     } catch (error) {
       const err = error as NodeJS.ErrnoException
-      if (err.code !== "EEXIST") throw error
+      // EEXIST = file already exists (POSIX); EPERM on Windows (-4048) = file
+      // locked by another handle during exclusive-create — treat as contention
+      if (err.code !== "EEXIST" && err.code !== "EPERM") throw error
 
       if (await detectStaleLock(lockPath, staleAfterMs)) {
         await reapStaleLock(lockPath)
