@@ -57,7 +57,7 @@ jobs:
             # 'warn' is not a bash builtin/command — omitted to avoid passing non-fatal checks
             while IFS= read -r line; do
               if echo "$line" | grep -qE "gh auth status"; then
-                if echo "$line" | grep -qE "^\s*#|grep[[:space:]].*gh auth status|\|\|[[:space:]]*(echo|printf|true|:)([[:space:]]|;|\$)|^\s*(if|while|until)[[:space:]]"; then
+                if echo "$line" | grep -qE "^\s*#|grep[[:space:]].*gh auth status|\|\|[[:space:]]*(echo|printf|true|:)([[:space:]]|\$)|^\s*(if|while|until)[[:space:]]"; then
                   : # comment, scanner's grep, bounded fallback (echo/printf/true/:), or conditional eval
                 else
                   LINENUM=$(grep -nF "$line" "$FILE" | head -1 | cut -d: -f1)
