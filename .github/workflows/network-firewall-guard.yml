@@ -19,6 +19,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Scan workflows for sandbox-blocked patterns
         id: scan
@@ -61,9 +62,11 @@ jobs:
             done < <(grep -E "gh auth status" "$FILE" || true)
 
             # PostHog - check opt-out with correct truthy/falsy value (not just name presence)
+            # Runtime accepts: 1/true/yes for DISABLE_POSTHOG; 0/false/no for SEND_ANONYMOUS_TELEMETRY
+            # Anchor the value match so "10" or "true-ish" don't produce false negatives
             if grep -qE "us\.i\.posthog\.com|posthog" "$FILE"; then
-              if grep -qE 'OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"?1"?|OMO_DISABLE_POSTHOG=1' "$FILE" || \
-                 grep -qE 'OMO_SEND_ANONYMOUS_TELEMETRY[[:space:]]*:[[:space:]]*"?0"?|OMO_SEND_ANONYMOUS_TELEMETRY=0' "$FILE"; then
+              if grep -qE 'OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"?(1|true|yes)"?([[:space:]]|$)|OMO_DISABLE_POSTHOG=(1|true|yes)([[:space:]]|$)' "$FILE" || \
+                 grep -qE 'OMO_SEND_ANONYMOUS_TELEMETRY[[:space:]]*:[[:space:]]*"?(0|false|no)"?([[:space:]]|$)|OMO_SEND_ANONYMOUS_TELEMETRY=(0|false|no)([[:space:]]|$)' "$FILE"; then
                 : # properly mitigated (runtime disables on either flag)
               else
                 LINENUM=$(grep -nE "posthog" "$FILE" | head -1 | cut -d: -f1)
@@ -72,9 +75,10 @@ jobs:
             fi
 
             # npx lazycodex - requires OMO_CODEX_DISABLE_POSTHOG or OMO_DISABLE_POSTHOG (truthy)
+            # Anchor value so "10" doesn't match "1" (unanchored false negative)
             if grep -qE "npx.*lazycodex" "$FILE"; then
-              if grep -qE 'OMO_CODEX_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"?1"?|OMO_CODEX_DISABLE_POSTHOG=1' "$FILE" || \
-                 grep -qE 'OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"?1"?|OMO_DISABLE_POSTHOG=1' "$FILE"; then
+              if grep -qE 'OMO_CODEX_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"?(1|true|yes)"?([[:space:]]|$)|OMO_CODEX_DISABLE_POSTHOG=(1|true|yes)([[:space:]]|$)' "$FILE" || \
+                 grep -qE 'OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"?(1|true|yes)"?([[:space:]]|$)|OMO_DISABLE_POSTHOG=(1|true|yes)([[:space:]]|$)' "$FILE"; then
                 : # properly mitigated
               else
                 LINENUM=$(grep -nE "npx.*lazycodex" "$FILE" | head -1 | cut -d: -f1)
