@@ -50,10 +50,11 @@ jobs:
             [ -f "$FILE" ] || continue
 
             # Flag bare 'gh auth status' calls — only || followed by a non-fatal cmd is mitigated
+            # 'warn' is not a bash builtin/command — omitted to avoid passing non-fatal checks
             while IFS= read -r line; do
               if echo "$line" | grep -qE "gh auth status"; then
-                if echo "$line" | grep -qE "^\s*#|grep[[:space:]].*gh auth status|\|\|[[:space:]]*(echo|printf|true|:|warn)"; then
-                  : # comment, scanner's own grep, or non-fatal fallback (echo/true/:/warn)
+                if echo "$line" | grep -qE "^\s*#|grep[[:space:]].*gh auth status|\|\|[[:space:]]*(echo|printf|true|:)"; then
+                  : # comment, scanner's own grep, or non-fatal fallback (echo/printf/true/:)
                 else
                   LINENUM=$(grep -nF "$line" "$FILE" | head -1 | cut -d: -f1)
                   BLOCK_FINDINGS="${BLOCK_FINDINGS}BLOCK ${FILE}:${LINENUM}: gh auth status without || mitigation\n  Fix: append || echo ::warning::blocked\n"
@@ -61,12 +62,11 @@ jobs:
               fi
             done < <(grep -E "gh auth status" "$FILE" || true)
 
-            # PostHog - check opt-out with correct truthy/falsy value (not just name presence)
-            # Runtime accepts: 1/true/yes for DISABLE_POSTHOG; 0/false/no for SEND_ANONYMOUS_TELEMETRY
-            # Anchor the value match so "10" or "true-ish" don't produce false negatives
+            # PostHog - anchored variable name (no NOT_OMO_ prefix), anchored value (no "10" match),
+            # accepts single/double quotes and all runtime-truthy/falsy forms per posthog.ts
             if grep -qE "us\.i\.posthog\.com|posthog" "$FILE"; then
-              if grep -qE 'OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"?(1|true|yes)"?([[:space:]]|$)|OMO_DISABLE_POSTHOG=(1|true|yes)([[:space:]]|$)' "$FILE" || \
-                 grep -qE 'OMO_SEND_ANONYMOUS_TELEMETRY[[:space:]]*:[[:space:]]*"?(0|false|no)"?([[:space:]]|$)|OMO_SEND_ANONYMOUS_TELEMETRY=(0|false|no)([[:space:]]|$)' "$FILE"; then
+              if grep -qE "(^|[^a-zA-Z_])OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*[\"']?(1|true|yes)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_DISABLE_POSTHOG=[\"']?(1|true|yes)[\"']?([[:space:]]|\$)" "$FILE" || \
+                 grep -qE "(^|[^a-zA-Z_])OMO_SEND_ANONYMOUS_TELEMETRY[[:space:]]*:[[:space:]]*[\"']?(0|false|no)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_SEND_ANONYMOUS_TELEMETRY=[\"']?(0|false|no)[\"']?([[:space:]]|\$)" "$FILE"; then
                 : # properly mitigated (runtime disables on either flag)
               else
                 LINENUM=$(grep -nE "posthog" "$FILE" | head -1 | cut -d: -f1)
@@ -75,10 +75,10 @@ jobs:
             fi
 
             # npx lazycodex - requires OMO_CODEX_DISABLE_POSTHOG or OMO_DISABLE_POSTHOG (truthy)
-            # Anchor value so "10" doesn't match "1" (unanchored false negative)
+            # Anchored name + value; single/double/no quotes accepted
             if grep -qE "npx.*lazycodex" "$FILE"; then
-              if grep -qE 'OMO_CODEX_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"?(1|true|yes)"?([[:space:]]|$)|OMO_CODEX_DISABLE_POSTHOG=(1|true|yes)([[:space:]]|$)' "$FILE" || \
-                 grep -qE 'OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"?(1|true|yes)"?([[:space:]]|$)|OMO_DISABLE_POSTHOG=(1|true|yes)([[:space:]]|$)' "$FILE"; then
+              if grep -qE "(^|[^a-zA-Z_])OMO_CODEX_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*[\"']?(1|true|yes)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_CODEX_DISABLE_POSTHOG=[\"']?(1|true|yes)[\"']?([[:space:]]|\$)" "$FILE" || \
+                 grep -qE "(^|[^a-zA-Z_])OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*[\"']?(1|true|yes)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_DISABLE_POSTHOG=[\"']?(1|true|yes)[\"']?([[:space:]]|\$)" "$FILE"; then
                 : # properly mitigated
               else
                 LINENUM=$(grep -nE "npx.*lazycodex" "$FILE" | head -1 | cut -d: -f1)
