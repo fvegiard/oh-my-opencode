@@ -61,8 +61,8 @@ jobs:
 
             # PostHog - check opt-out with correct truthy/falsy value (not just name presence)
             if grep -qiE "us\.i\.posthog\.com|posthog" "$FILE"; then
-              if grep -qE 'OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"1"|OMO_DISABLE_POSTHOG=1' "$FILE" && \
-                 grep -qE 'OMO_SEND_ANONYMOUS_TELEMETRY[[:space:]]*:[[:space:]]*"0"|OMO_SEND_ANONYMOUS_TELEMETRY=0' "$FILE"; then
+              if grep -qE 'OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"?1"?|OMO_DISABLE_POSTHOG=1' "$FILE" && \
+                 grep -qE 'OMO_SEND_ANONYMOUS_TELEMETRY[[:space:]]*:[[:space:]]*"?0"?|OMO_SEND_ANONYMOUS_TELEMETRY=0' "$FILE"; then
                 : # properly mitigated
               else
                 LINENUM=$(grep -niE "posthog" "$FILE" | head -1 | cut -d: -f1)
@@ -72,8 +72,8 @@ jobs:
 
             # npx lazycodex - requires OMO_CODEX_DISABLE_POSTHOG or OMO_DISABLE_POSTHOG (truthy)
             if grep -qE "npx.*lazycodex" "$FILE"; then
-              if grep -qE 'OMO_CODEX_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"1"|OMO_CODEX_DISABLE_POSTHOG=1' "$FILE" || \
-                 grep -qE 'OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"1"|OMO_DISABLE_POSTHOG=1' "$FILE"; then
+              if grep -qE 'OMO_CODEX_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"?1"?|OMO_CODEX_DISABLE_POSTHOG=1' "$FILE" || \
+                 grep -qE 'OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"?1"?|OMO_DISABLE_POSTHOG=1' "$FILE"; then
                 : # properly mitigated
               else
                 LINENUM=$(grep -nE "npx.*lazycodex" "$FILE" | head -1 | cut -d: -f1)
