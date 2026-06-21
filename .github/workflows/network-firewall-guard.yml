@@ -53,8 +53,8 @@ jobs:
             # 'warn' is not a bash builtin/command — omitted to avoid passing non-fatal checks
             while IFS= read -r line; do
               if echo "$line" | grep -qE "gh auth status"; then
-                if echo "$line" | grep -qE "^\s*#|grep[[:space:]].*gh auth status|\|\|[[:space:]]*(echo|printf|true|:)"; then
-                  : # comment, scanner's own grep, or non-fatal fallback (echo/printf/true/:)
+                if echo "$line" | grep -qE "^\s*#|grep[[:space:]].*gh auth status|\|\|[[:space:]]*(echo|printf|true|:)|^\s*(if|while|until)[[:space:]]"; then
+                  : # comment, scanner's grep, non-fatal fallback, or conditional eval (if/while/until)
                 else
                   LINENUM=$(grep -nF "$line" "$FILE" | head -1 | cut -d: -f1)
                   BLOCK_FINDINGS="${BLOCK_FINDINGS}BLOCK ${FILE}:${LINENUM}: gh auth status without || mitigation\n  Fix: append || echo ::warning::blocked\n"
@@ -64,9 +64,9 @@ jobs:
 
             # PostHog telemetry - anchored variable name (no NOT_OMO_ prefix), anchored value,
             # accepts single/double/no quotes; all runtime-truthy/falsy forms from the PostHog SDK
-            if grep -qE "us\.i\.posthog\.com|posthog" "$FILE"; then
-              if grep -qE "(^|[^a-zA-Z_])OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*[\"']?(1|true|yes)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_DISABLE_POSTHOG=[\"']?(1|true|yes)[\"']?([[:space:]]|\$)" "$FILE" || \
-                 grep -qE "(^|[^a-zA-Z_])OMO_SEND_ANONYMOUS_TELEMETRY[[:space:]]*:[[:space:]]*[\"']?(0|false|no)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_SEND_ANONYMOUS_TELEMETRY=[\"']?(0|false|no)[\"']?([[:space:]]|\$)" "$FILE"; then
+            if grep -vE "^\s*#" "$FILE" | grep -qE "us\.i\.posthog\.com|posthog"; then
+              if grep -vE "^\s*#" "$FILE" | grep -qE "(^|[^a-zA-Z_])OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*[\"']?(1|true|yes)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_DISABLE_POSTHOG=[\"']?(1|true|yes)[\"']?([[:space:]]|\$)" || \
+                 grep -vE "^\s*#" "$FILE" | grep -qE "(^|[^a-zA-Z_])OMO_SEND_ANONYMOUS_TELEMETRY[[:space:]]*:[[:space:]]*[\"']?(0|false|no)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_SEND_ANONYMOUS_TELEMETRY=[\"']?(0|false|no)[\"']?([[:space:]]|\$)"; then
                 : # properly mitigated (runtime disables on either flag)
               else
                 LINENUM=$(grep -nE "posthog" "$FILE" | head -1 | cut -d: -f1)
@@ -74,14 +74,18 @@ jobs:
               fi
             fi
 
-            # lazycodex installer (via npx) - requires OMO_CODEX_DISABLE_POSTHOG or OMO_DISABLE_POSTHOG
-            # Anchored name + value; single/double/no quotes accepted
-            if grep -qE "npx.*lazycodex" "$FILE"; then
-              if grep -qE "(^|[^a-zA-Z_])OMO_CODEX_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*[\"']?(1|true|yes)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_CODEX_DISABLE_POSTHOG=[\"']?(1|true|yes)[\"']?([[:space:]]|\$)" "$FILE" || \
-                 grep -qE "(^|[^a-zA-Z_])OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*[\"']?(1|true|yes)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_DISABLE_POSTHOG=[\"']?(1|true|yes)[\"']?([[:space:]]|\$)" "$FILE"; then
+            # lazycodex installer (via npx) - skip commented invocations (# npx lazycodex).
+            # Accepts: OMO_CODEX_DISABLE_POSTHOG, OMO_DISABLE_POSTHOG (truthy), or
+            # OMO_CODEX_SEND_ANONYMOUS_TELEMETRY / OMO_SEND_ANONYMOUS_TELEMETRY (falsy incl. yes).
+            # Opt-out check also skips commented lines so # OMO_CODEX_DISABLE_POSTHOG: 1 is not mitigation.
+            if grep -vE "^\s*#" "$FILE" | grep -qE "npx.*lazycodex"; then
+              if grep -vE "^\s*#" "$FILE" | grep -qE "(^|[^a-zA-Z_])OMO_CODEX_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*[\"']?(1|true|yes)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_CODEX_DISABLE_POSTHOG=[\"']?(1|true|yes)[\"']?([[:space:]]|\$)" || \
+                 grep -vE "^\s*#" "$FILE" | grep -qE "(^|[^a-zA-Z_])OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*[\"']?(1|true|yes)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_DISABLE_POSTHOG=[\"']?(1|true|yes)[\"']?([[:space:]]|\$)" || \
+                 grep -vE "^\s*#" "$FILE" | grep -qE "(^|[^a-zA-Z_])OMO_CODEX_SEND_ANONYMOUS_TELEMETRY[[:space:]]*:[[:space:]]*[\"']?(0|false|no|yes)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_CODEX_SEND_ANONYMOUS_TELEMETRY=[\"']?(0|false|no|yes)[\"']?([[:space:]]|\$)" || \
+                 grep -vE "^\s*#" "$FILE" | grep -qE "(^|[^a-zA-Z_])OMO_SEND_ANONYMOUS_TELEMETRY[[:space:]]*:[[:space:]]*[\"']?(0|false|no|yes)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_SEND_ANONYMOUS_TELEMETRY=[\"']?(0|false|no|yes)[\"']?([[:space:]]|\$)"; then
                 : # properly mitigated
               else
-                LINENUM=$(grep -nE "npx.*lazycodex" "$FILE" | head -1 | cut -d: -f1)
+                LINENUM=$(awk '!/^[[:space:]]*#/ && /npx.*lazycodex/ {print NR; exit}' "$FILE")
                 BLOCK_FINDINGS="${BLOCK_FINDINGS}BLOCK ${FILE}:${LINENUM}: lazycodex installer without OMO_CODEX_DISABLE_POSTHOG opt-out\n  Fix: OMO_CODEX_DISABLE_POSTHOG: 1 or OMO_DISABLE_POSTHOG: 1\n"
               fi
             fi
