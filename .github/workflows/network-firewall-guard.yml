@@ -44,14 +44,15 @@ jobs:
           BLOCK_FINDINGS=""
           INFO_FINDINGS=""
 
-          for FILE in $FILES; do
+          while IFS= read -r FILE; do
+            [ -n "$FILE" ] || continue
             [ -f "$FILE" ] || continue
 
-            # Flag bare 'gh auth status' calls (ones not followed by ||)
+            # Flag bare 'gh auth status' calls — only || followed by a non-fatal cmd is mitigated
             while IFS= read -r line; do
               if echo "$line" | grep -qE "gh auth status"; then
-                if echo "$line" | grep -qE "^\s*#|grep[[:space:]].*gh auth status|\|\|"; then
-                  : # comment line, scanner's own grep-for-pattern, or already mitigated
+                if echo "$line" | grep -qE "^\s*#|grep[[:space:]].*gh auth status|\|\|[[:space:]]*(echo|printf|true|:|warn)"; then
+                  : # comment, scanner's own grep, or non-fatal fallback (echo/true/:/warn)
                 else
                   LINENUM=$(grep -nF "$line" "$FILE" | head -1 | cut -d: -f1)
                   BLOCK_FINDINGS="${BLOCK_FINDINGS}BLOCK ${FILE}:${LINENUM}: gh auth status without || mitigation\n  Fix: append || echo ::warning::blocked\n"
@@ -86,7 +87,7 @@ jobs:
               LINENUM=$(grep -nE "curl.*opencode\.ai" "$FILE" | head -1 | cut -d: -f1)
               INFO_FINDINGS="${INFO_FINDINGS}INFO ${FILE}:${LINENUM}: curl to opencode.ai may be blocked on locked-down runners\n"
             fi
-          done
+          done <<< "$FILES"
 
           # Write findings to temp file to avoid shell injection and YAML indentation issues
           FINDINGS_FILE=$(mktemp)
