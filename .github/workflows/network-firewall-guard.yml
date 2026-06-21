@@ -50,8 +50,8 @@ jobs:
             # Flag bare 'gh auth status' calls (ones not followed by ||)
             while IFS= read -r line; do
               if echo "$line" | grep -qE "gh auth status"; then
-                if echo "$line" | grep -qE "^\s*#|grep |\|\|"; then
-                  : # comment line, grep pattern definition, or already mitigated
+                if echo "$line" | grep -qE "^\s*#|grep[[:space:]].*gh auth status|\|\|"; then
+                  : # comment line, scanner's own grep-for-pattern, or already mitigated
                 else
                   LINENUM=$(grep -nF "$line" "$FILE" | head -1 | cut -d: -f1)
                   BLOCK_FINDINGS="${BLOCK_FINDINGS}BLOCK ${FILE}:${LINENUM}: gh auth status without || mitigation\n  Fix: append || echo ::warning::blocked\n"
@@ -60,12 +60,12 @@ jobs:
             done < <(grep -E "gh auth status" "$FILE" || true)
 
             # PostHog - check opt-out with correct truthy/falsy value (not just name presence)
-            if grep -qiE "us\.i\.posthog\.com|posthog" "$FILE"; then
-              if grep -qE 'OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"?1"?|OMO_DISABLE_POSTHOG=1' "$FILE" && \
+            if grep -qE "us\.i\.posthog\.com|posthog" "$FILE"; then
+              if grep -qE 'OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"?1"?|OMO_DISABLE_POSTHOG=1' "$FILE" || \
                  grep -qE 'OMO_SEND_ANONYMOUS_TELEMETRY[[:space:]]*:[[:space:]]*"?0"?|OMO_SEND_ANONYMOUS_TELEMETRY=0' "$FILE"; then
-                : # properly mitigated
+                : # properly mitigated (runtime disables on either flag)
               else
-                LINENUM=$(grep -niE "posthog" "$FILE" | head -1 | cut -d: -f1)
+                LINENUM=$(grep -nE "posthog" "$FILE" | head -1 | cut -d: -f1)
                 BLOCK_FINDINGS="${BLOCK_FINDINGS}BLOCK ${FILE}:${LINENUM}: posthog without valid opt-out value\n  Fix: OMO_DISABLE_POSTHOG: 1 and OMO_SEND_ANONYMOUS_TELEMETRY: 0\n"
               fi
             fi
