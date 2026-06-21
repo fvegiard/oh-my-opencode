@@ -28,12 +28,13 @@ jobs:
 
           THIS_FILE=".github/workflows/network-firewall-guard.yml"
 
-          # On PRs scan only changed workflow files; on push scan all (except self)
+          # Both PR and push: scan only changed workflow files
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             FILES=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
-              | grep '^\.github/workflows/.*\.yml$' || true)
+              | grep -E '^\.github/workflows/.*\.ya?ml$' || true)
           else
-            FILES=$(find .github/workflows -name "*.yml" | sort)
+            FILES=$(git diff --name-only HEAD~1..HEAD \
+              | grep -E '^\.github/workflows/.*\.ya?ml$' || true)
           fi
 
           BLOCK_FINDINGS=""
@@ -43,60 +44,62 @@ jobs:
             [ "$FILE" = "$THIS_FILE" ] && continue
             [ -f "$FILE" ] || continue
 
-            # gh auth status - flag only when NOT already made non-fatal (no || after it)
+            # gh auth status - flag only when NOT already made non-fatal
             while IFS= read -r line; do
               if echo "$line" | grep -qE "gh auth status"; then
                 if echo "$line" | grep -qE "\|\|"; then
                   : # already mitigated
                 else
                   LINENUM=$(grep -nF "$line" "$FILE" | head -1 | cut -d: -f1)
-                  BLOCK_FINDINGS="${BLOCK_FINDINGS}BLOCK ${FILE}:${LINENUM}: ${line}\n  Fix: append '|| echo ::warning::blocked' - api.github.com is blocked in Codex sandbox\n"
+                  BLOCK_FINDINGS="${BLOCK_FINDINGS}BLOCK ${FILE}:${LINENUM}: gh auth status without || mitigation\n  Fix: append '|| echo ::warning::blocked'\n"
                 fi
               fi
             done < <(grep -E "gh auth status" "$FILE" || true)
 
-            # PostHog / telemetry - flag only when OMO opt-out not present in same file
+            # PostHog - check opt-out with correct truthy/falsy value (not just name presence)
             if grep -qiE "us\.i\.posthog\.com|posthog" "$FILE"; then
-              if grep -qE "OMO_DISABLE_POSTHOG|OMO_SEND_ANONYMOUS_TELEMETRY|DO_NOT_TRACK" "$FILE"; then
-                : # already mitigated
+              if grep -qE 'OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"1"|OMO_DISABLE_POSTHOG=1' "$FILE" || \
+                 grep -qE 'OMO_SEND_ANONYMOUS_TELEMETRY[[:space:]]*:[[:space:]]*"0"|OMO_SEND_ANONYMOUS_TELEMETRY=0' "$FILE"; then
+                : # properly mitigated
               else
                 LINENUM=$(grep -niE "posthog" "$FILE" | head -1 | cut -d: -f1)
-                BLOCK_FINDINGS="${BLOCK_FINDINGS}BLOCK ${FILE}:${LINENUM}: posthog call detected\n  Fix: add OMO_DISABLE_POSTHOG=1 and OMO_SEND_ANONYMOUS_TELEMETRY=0 to job env:\n"
+                BLOCK_FINDINGS="${BLOCK_FINDINGS}BLOCK ${FILE}:${LINENUM}: posthog without valid opt-out value\n  Fix: OMO_DISABLE_POSTHOG: \"1\" and OMO_SEND_ANONYMOUS_TELEMETRY: \"0\"\n"
               fi
             fi
 
-            # npx lazycodex without DO_NOT_TRACK
+            # npx lazycodex - requires OMO_CODEX_DISABLE_POSTHOG or OMO_DISABLE_POSTHOG (truthy)
             if grep -qE "npx.*lazycodex" "$FILE"; then
-              if grep -qE "DO_NOT_TRACK|OMO_DISABLE_POSTHOG" "$FILE"; then
-                : # already mitigated
+              if grep -qE 'OMO_CODEX_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"1"|OMO_CODEX_DISABLE_POSTHOG=1' "$FILE" || \
+                 grep -qE 'OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"1"|OMO_DISABLE_POSTHOG=1' "$FILE"; then
+                : # properly mitigated
               else
                 LINENUM=$(grep -nE "npx.*lazycodex" "$FILE" | head -1 | cut -d: -f1)
-                BLOCK_FINDINGS="${BLOCK_FINDINGS}BLOCK ${FILE}:${LINENUM}: npx lazycodex without telemetry opt-out\n  Fix: add DO_NOT_TRACK=1 to job env:\n"
+                BLOCK_FINDINGS="${BLOCK_FINDINGS}BLOCK ${FILE}:${LINENUM}: npx lazycodex without OMO_CODEX_DISABLE_POSTHOG opt-out\n  Fix: OMO_CODEX_DISABLE_POSTHOG: \"1\" or OMO_DISABLE_POSTHOG: \"1\"\n"
               fi
             fi
 
-            # curl to opencode.ai - info only, not a hard block
+            # curl opencode.ai - info only
             if grep -qE "curl.*opencode\.ai" "$FILE"; then
               LINENUM=$(grep -nE "curl.*opencode\.ai" "$FILE" | head -1 | cut -d: -f1)
               INFO_FINDINGS="${INFO_FINDINGS}INFO ${FILE}:${LINENUM}: curl to opencode.ai may be blocked on locked-down runners\n"
             fi
           done
 
-          if [ -z "$BLOCK_FINDINGS" ] && [ -z "$INFO_FINDINGS" ]; then
-            echo "findings=" >> "$GITHUB_OUTPUT"
+          # Write findings to temp file to avoid shell injection via GITHUB_OUTPUT
+          FINDINGS_FILE=$(mktemp)
+          [ -n "$BLOCK_FINDINGS" ] && printf '%b' "$BLOCK_FINDINGS" >> "$FINDINGS_FILE"
+          [ -n "$INFO_FINDINGS" ] && printf '%b' "$INFO_FINDINGS" >> "$FINDINGS_FILE"
+
+          if [ ! -s "$FINDINGS_FILE" ]; then
             echo "clean=true" >> "$GITHUB_OUTPUT"
+            echo "findings_file=" >> "$GITHUB_OUTPUT"
           else
-            {
-              echo "findings<<EOF"
-              [ -n "$BLOCK_FINDINGS" ] && echo -e "$BLOCK_FINDINGS"
-              [ -n "$INFO_FINDINGS" ] && echo -e "$INFO_FINDINGS"
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
             if [ -n "$BLOCK_FINDINGS" ]; then
               echo "clean=false" >> "$GITHUB_OUTPUT"
             else
               echo "clean=true" >> "$GITHUB_OUTPUT"
             fi
+            echo "findings_file=$FINDINGS_FILE" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Write job summary
@@ -107,11 +110,11 @@ jobs:
           JOB_SUMMARY_STATUS: ${{ job.status }}
           JOB_SUMMARY_DETAILS: |
             Scans changed workflow files for patterns known to fail in Codex/restricted runners.
-            Flags: gh auth status (api.github.com), PostHog telemetry, npx lazycodex without opt-out.
-            Skips patterns already mitigated (|| echo, OMO_DISABLE_POSTHOG, DO_NOT_TRACK).
+            Flags: gh auth status, PostHog telemetry, npx lazycodex without opt-out.
+            Checks actual opt-out values (not just variable presence).
           JOB_SUMMARY_NEXT: |
-            If blocked: append '|| echo ::warning::' to gh auth status, add OMO_DISABLE_POSTHOG=1
-            and OMO_SEND_ANONYMOUS_TELEMETRY=0 for PostHog, or DO_NOT_TRACK=1 for npx lazycodex.
+            If blocked: append '|| echo ::warning::' to gh auth status, add OMO_DISABLE_POSTHOG: "1"
+            and OMO_SEND_ANONYMOUS_TELEMETRY: "0" for PostHog, or OMO_CODEX_DISABLE_POSTHOG: "1" for lazycodex.
         run: GITHUB_STEP_SUMMARY="$GITHUB_STEP_SUMMARY" bash .github/scripts/write-job-summary.sh
 
       - name: Comment on PR with findings
@@ -119,22 +122,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
+          FINDINGS_FILE: ${{ steps.scan.outputs.findings_file }}
         run: |
-          gh pr comment "$PR_URL" --body "$(cat <<'EOF'
-          ## Network Firewall Guard - Sandbox-blocking patterns detected
+          BODY=$(cat "$FINDINGS_FILE")
+          gh pr comment "$PR_URL" --body "## Network Firewall Guard - Sandbox-blocking patterns detected
 
-          The following patterns in changed workflow files are known to fail in Codex / restricted runners:
+The following patterns in changed workflow files are known to fail in Codex / restricted runners:
 
-          ${{ steps.scan.outputs.findings }}
+${BODY}
 
-          ### Standard fixes
-          - gh auth status -> append || echo ::warning::blocked (non-fatal; login via --with-token is sufficient)
-          - PostHog telemetry -> add OMO_DISABLE_POSTHOG=1 and OMO_SEND_ANONYMOUS_TELEMETRY=0 to job env:
-          - npx lazycodex -> add DO_NOT_TRACK=1 to job env:
+### Standard fixes
+- gh auth status: append || echo ::warning::blocked (non-fatal)
+- PostHog: add OMO_DISABLE_POSTHOG: \"1\" and OMO_SEND_ANONYMOUS_TELEMETRY: \"0\" to job env
+- npx lazycodex: add OMO_CODEX_DISABLE_POSTHOG: \"1\" to job env
 
-          Auto-detected by .github/workflows/network-firewall-guard.yml
-          EOF
-          )"
+Auto-detected by .github/workflows/network-firewall-guard.yml"
 
       - name: Fail if blocking patterns found
         if: steps.scan.outputs.clean == 'false'
