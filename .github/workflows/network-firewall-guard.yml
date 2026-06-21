@@ -31,8 +31,14 @@ jobs:
             FILES=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
               | grep -E '^\.github/workflows/.*\.ya?ml$' || true)
           else
-            FILES=$(git diff --name-only "${{ github.event.before }}..${{ github.sha }}" \
-              | grep -E '^\.github/workflows/.*\.ya?ml$' || true)
+            BEFORE="${{ github.event.before }}"
+            if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              # New branch push — no previous commit; scan all workflow files
+              FILES=$(find .github/workflows -name "*.yml" -o -name "*.yaml" | sort || true)
+            else
+              FILES=$(git diff --name-only "$BEFORE..${{ github.sha }}" \
+                | grep -E '^\.github/workflows/.*\.ya?ml$' || true)
+            fi
           fi
 
           BLOCK_FINDINGS=""
@@ -55,7 +61,7 @@ jobs:
 
             # PostHog - check opt-out with correct truthy/falsy value (not just name presence)
             if grep -qiE "us\.i\.posthog\.com|posthog" "$FILE"; then
-              if grep -qE 'OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"1"|OMO_DISABLE_POSTHOG=1' "$FILE" || \
+              if grep -qE 'OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*"1"|OMO_DISABLE_POSTHOG=1' "$FILE" && \
                  grep -qE 'OMO_SEND_ANONYMOUS_TELEMETRY[[:space:]]*:[[:space:]]*"0"|OMO_SEND_ANONYMOUS_TELEMETRY=0' "$FILE"; then
                 : # properly mitigated
               else
