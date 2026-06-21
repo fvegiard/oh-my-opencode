@@ -26,14 +26,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          THIS_FILE=".github/workflows/network-firewall-guard.yml"
-
           # Both PR and push: scan only changed workflow files
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             FILES=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
               | grep -E '^\.github/workflows/.*\.ya?ml$' || true)
           else
-            FILES=$(git diff --name-only HEAD~1..HEAD \
+            FILES=$(git diff --name-only "${{ github.event.before }}..${{ github.sha }}" \
               | grep -E '^\.github/workflows/.*\.ya?ml$' || true)
           fi
 
@@ -41,7 +39,6 @@ jobs:
           INFO_FINDINGS=""
 
           for FILE in $FILES; do
-            [ "$FILE" = "$THIS_FILE" ] && continue
             [ -f "$FILE" ] || continue
 
             # gh auth status - flag only when NOT already made non-fatal
