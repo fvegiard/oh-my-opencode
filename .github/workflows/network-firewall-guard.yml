@@ -15,6 +15,10 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+    env:
+      OMO_DISABLE_POSTHOG: "1"
+      OMO_CODEX_DISABLE_POSTHOG: "1"
+      OMO_SEND_ANONYMOUS_TELEMETRY: "0"
     steps:
       - uses: actions/checkout@v5
         with:
@@ -53,8 +57,8 @@ jobs:
             # 'warn' is not a bash builtin/command — omitted to avoid passing non-fatal checks
             while IFS= read -r line; do
               if echo "$line" | grep -qE "gh auth status"; then
-                if echo "$line" | grep -qE "^\s*#|grep[[:space:]].*gh auth status|\|\|[[:space:]]*(echo|printf|true|:)|^\s*(if|while|until)[[:space:]]"; then
-                  : # comment, scanner's grep, non-fatal fallback, or conditional eval (if/while/until)
+                if echo "$line" | grep -qE "^\s*#|grep[[:space:]].*gh auth status|\|\|[[:space:]]*(echo|printf|true|:)([[:space:]]|;|\$)|^\s*(if|while|until)[[:space:]]"; then
+                  : # comment, scanner's grep, bounded fallback (echo/printf/true/:), or conditional eval
                 else
                   LINENUM=$(grep -nF "$line" "$FILE" | head -1 | cut -d: -f1)
                   BLOCK_FINDINGS="${BLOCK_FINDINGS}BLOCK ${FILE}:${LINENUM}: gh auth status without || mitigation\n  Fix: append || echo ::warning::blocked\n"
@@ -65,8 +69,8 @@ jobs:
             # PostHog telemetry - anchored variable name (no NOT_OMO_ prefix), anchored value,
             # accepts single/double/no quotes; all runtime-truthy/falsy forms from the PostHog SDK
             if grep -vE "^\s*#" "$FILE" | grep -qE "us\.i\.posthog\.com|posthog"; then
-              if grep -vE "^\s*#" "$FILE" | grep -qE "(^|[^a-zA-Z_])OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*[\"']?(1|true|yes)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_DISABLE_POSTHOG=[\"']?(1|true|yes)[\"']?([[:space:]]|\$)" || \
-                 grep -vE "^\s*#" "$FILE" | grep -qE "(^|[^a-zA-Z_])OMO_SEND_ANONYMOUS_TELEMETRY[[:space:]]*:[[:space:]]*[\"']?(0|false|no)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_SEND_ANONYMOUS_TELEMETRY=[\"']?(0|false|no)[\"']?([[:space:]]|\$)"; then
+              if grep -vE "^\s*#" "$FILE" | grep -qE "^[[:space:]]+OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*[\"']?(1|true|yes)[\"']?([[:space:]]|;|\$)|(^|[[:space:]])(export[[:space:]]+)?OMO_DISABLE_POSTHOG=[\"']?(1|true|yes)[\"']?([[:space:]]|;|\$)" || \
+                 grep -vE "^\s*#" "$FILE" | grep -qE "^[[:space:]]+OMO_SEND_ANONYMOUS_TELEMETRY[[:space:]]*:[[:space:]]*[\"']?(0|false|no)[\"']?([[:space:]]|;|\$)|(^|[[:space:]])(export[[:space:]]+)?OMO_SEND_ANONYMOUS_TELEMETRY=[\"']?(0|false|no)[\"']?([[:space:]]|;|\$)"; then
                 : # properly mitigated (runtime disables on either flag)
               else
                 LINENUM=$(grep -nE "posthog" "$FILE" | head -1 | cut -d: -f1)
@@ -79,10 +83,10 @@ jobs:
             # OMO_CODEX_SEND_ANONYMOUS_TELEMETRY / OMO_SEND_ANONYMOUS_TELEMETRY (falsy incl. yes).
             # Opt-out check also skips commented lines so # OMO_CODEX_DISABLE_POSTHOG: 1 is not mitigation.
             if grep -vE "^\s*#" "$FILE" | grep -qE "npx.*lazycodex"; then
-              if grep -vE "^\s*#" "$FILE" | grep -qE "(^|[^a-zA-Z_])OMO_CODEX_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*[\"']?(1|true|yes)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_CODEX_DISABLE_POSTHOG=[\"']?(1|true|yes)[\"']?([[:space:]]|\$)" || \
-                 grep -vE "^\s*#" "$FILE" | grep -qE "(^|[^a-zA-Z_])OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*[\"']?(1|true|yes)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_DISABLE_POSTHOG=[\"']?(1|true|yes)[\"']?([[:space:]]|\$)" || \
-                 grep -vE "^\s*#" "$FILE" | grep -qE "(^|[^a-zA-Z_])OMO_CODEX_SEND_ANONYMOUS_TELEMETRY[[:space:]]*:[[:space:]]*[\"']?(0|false|no|yes)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_CODEX_SEND_ANONYMOUS_TELEMETRY=[\"']?(0|false|no|yes)[\"']?([[:space:]]|\$)" || \
-                 grep -vE "^\s*#" "$FILE" | grep -qE "(^|[^a-zA-Z_])OMO_SEND_ANONYMOUS_TELEMETRY[[:space:]]*:[[:space:]]*[\"']?(0|false|no|yes)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_SEND_ANONYMOUS_TELEMETRY=[\"']?(0|false|no|yes)[\"']?([[:space:]]|\$)"; then
+              if grep -vE "^\s*#" "$FILE" | grep -qE "^[[:space:]]+OMO_CODEX_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*[\"']?(1|true|yes)[\"']?([[:space:]]|;|\$)|(^|[[:space:]])(export[[:space:]]+)?OMO_CODEX_DISABLE_POSTHOG=[\"']?(1|true|yes)[\"']?([[:space:]]|;|\$)" || \
+                 grep -vE "^\s*#" "$FILE" | grep -qE "^[[:space:]]+OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*[\"']?(1|true|yes)[\"']?([[:space:]]|;|\$)|(^|[[:space:]])(export[[:space:]]+)?OMO_DISABLE_POSTHOG=[\"']?(1|true|yes)[\"']?([[:space:]]|;|\$)" || \
+                 grep -vE "^\s*#" "$FILE" | grep -qE "^[[:space:]]+OMO_CODEX_SEND_ANONYMOUS_TELEMETRY[[:space:]]*:[[:space:]]*[\"']?(0|false|no|yes)[\"']?([[:space:]]|;|\$)|(^|[[:space:]])(export[[:space:]]+)?OMO_CODEX_SEND_ANONYMOUS_TELEMETRY=[\"']?(0|false|no|yes)[\"']?([[:space:]]|;|\$)" || \
+                 grep -vE "^\s*#" "$FILE" | grep -qE "^[[:space:]]+OMO_SEND_ANONYMOUS_TELEMETRY[[:space:]]*:[[:space:]]*[\"']?(0|false|no|yes)[\"']?([[:space:]]|;|\$)|(^|[[:space:]])(export[[:space:]]+)?OMO_SEND_ANONYMOUS_TELEMETRY=[\"']?(0|false|no|yes)[\"']?([[:space:]]|;|\$)"; then
                 : # properly mitigated
               else
                 LINENUM=$(awk '!/^[[:space:]]*#/ && /npx.*lazycodex/ {print NR; exit}' "$FILE")
@@ -114,21 +118,6 @@ jobs:
             echo "findings_file=$FINDINGS_FILE" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Write job summary
-        if: always()
-        shell: bash
-        env:
-          JOB_SUMMARY_TITLE: Network Firewall Guard
-          JOB_SUMMARY_STATUS: ${{ job.status }}
-          JOB_SUMMARY_DETAILS: |
-            Scans changed workflow files for patterns known to fail in Codex/restricted runners.
-            Flags: gh auth (api.github.com), PostHog telemetry, npx lazycodex without opt-out.
-            Checks actual opt-out values (not just variable presence).
-          JOB_SUMMARY_NEXT: |
-            If blocked: append || echo ::warning:: to gh auth status, add OMO_DISABLE_POSTHOG: 1
-            and OMO_SEND_ANONYMOUS_TELEMETRY: 0 for PostHog, or OMO_CODEX_DISABLE_POSTHOG: 1 for lazycodex.
-        run: GITHUB_STEP_SUMMARY="$GITHUB_STEP_SUMMARY" bash .github/scripts/write-job-summary.sh
-
       - name: Comment on PR with findings
         if: github.event_name == 'pull_request' && steps.scan.outputs.clean == 'false'
         env:
@@ -152,6 +141,21 @@ jobs:
             echo "Auto-detected by .github/workflows/network-firewall-guard.yml"
           } > "$BODY_FILE"
           gh pr comment "$PR_URL" --body-file "$BODY_FILE"
+
+      - name: Write job summary
+        if: always()
+        shell: bash
+        env:
+          JOB_SUMMARY_TITLE: Network Firewall Guard
+          JOB_SUMMARY_STATUS: ${{ job.status }}
+          JOB_SUMMARY_DETAILS: |
+            Scans changed workflow files for patterns known to fail in Codex/restricted runners.
+            Flags: gh auth (api.github.com), PostHog telemetry, npx lazycodex without opt-out.
+            Checks actual opt-out values (not just variable presence).
+          JOB_SUMMARY_NEXT: |
+            If blocked: append || echo ::warning:: to gh auth status, add OMO_DISABLE_POSTHOG: 1
+            and OMO_SEND_ANONYMOUS_TELEMETRY: 0 for PostHog, or OMO_CODEX_DISABLE_POSTHOG: 1 for lazycodex.
+        run: GITHUB_STEP_SUMMARY="$GITHUB_STEP_SUMMARY" bash .github/scripts/write-job-summary.sh
 
       - name: Fail if blocking patterns found
         if: steps.scan.outputs.clean == 'false'
