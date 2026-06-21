@@ -29,6 +29,8 @@ jobs:
       DO_NOT_TRACK: "1"
       POSTHOG_DISABLED: "1"
       ANTHROPIC_DISABLE_TELEMETRY: "1"
+      OMO_DISABLE_POSTHOG: "1"
+      OMO_SEND_ANONYMOUS_TELEMETRY: "0"
 
     steps:
       # Checkout with sisyphus-dev-ai's PAT
@@ -49,7 +51,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           echo "$GITHUB_TOKEN" | gh auth login --with-token
-          gh auth status || echo "::warning::gh auth status blocked — sandboxed runner (Codex/restricted env); login token already set via --with-token"
+          gh auth status || echo "::warning::gh auth status blocked - sandboxed runner (Codex/restricted env); login token already set via --with-token"
 
       - name: Ensure tmux is available (Linux)
         if: runner.os == 'Linux'
