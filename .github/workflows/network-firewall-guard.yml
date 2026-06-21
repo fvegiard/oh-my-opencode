@@ -41,11 +41,11 @@ jobs:
           for FILE in $FILES; do
             [ -f "$FILE" ] || continue
 
-            # gh auth status - flag only when NOT already made non-fatal
+            # Flag bare 'gh auth status' calls (ones not followed by ||)
             while IFS= read -r line; do
               if echo "$line" | grep -qE "gh auth status"; then
-                if echo "$line" | grep -qE "\|\|"; then
-                  : # already mitigated
+                if echo "$line" | grep -qE "^\s*#|grep |\|\|"; then
+                  : # comment line, grep pattern definition, or already mitigated
                 else
                   LINENUM=$(grep -nF "$line" "$FILE" | head -1 | cut -d: -f1)
                   BLOCK_FINDINGS="${BLOCK_FINDINGS}BLOCK ${FILE}:${LINENUM}: gh auth status without || mitigation\n  Fix: append || echo ::warning::blocked\n"
@@ -107,7 +107,7 @@ jobs:
           JOB_SUMMARY_STATUS: ${{ job.status }}
           JOB_SUMMARY_DETAILS: |
             Scans changed workflow files for patterns known to fail in Codex/restricted runners.
-            Flags: gh auth status, PostHog telemetry, npx lazycodex without opt-out.
+            Flags: gh auth (api.github.com), PostHog telemetry, npx lazycodex without opt-out.
             Checks actual opt-out values (not just variable presence).
           JOB_SUMMARY_NEXT: |
             If blocked: append || echo ::warning:: to gh auth status, add OMO_DISABLE_POSTHOG: 1
