@@ -62,19 +62,19 @@ jobs:
               fi
             done < <(grep -E "gh auth status" "$FILE" || true)
 
-            # PostHog - anchored variable name (no NOT_OMO_ prefix), anchored value (no "10" match),
-            # accepts single/double quotes and all runtime-truthy/falsy forms per posthog.ts
+            # PostHog telemetry - anchored variable name (no NOT_OMO_ prefix), anchored value,
+            # accepts single/double/no quotes; all runtime-truthy/falsy forms from the PostHog SDK
             if grep -qE "us\.i\.posthog\.com|posthog" "$FILE"; then
               if grep -qE "(^|[^a-zA-Z_])OMO_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*[\"']?(1|true|yes)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_DISABLE_POSTHOG=[\"']?(1|true|yes)[\"']?([[:space:]]|\$)" "$FILE" || \
                  grep -qE "(^|[^a-zA-Z_])OMO_SEND_ANONYMOUS_TELEMETRY[[:space:]]*:[[:space:]]*[\"']?(0|false|no)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_SEND_ANONYMOUS_TELEMETRY=[\"']?(0|false|no)[\"']?([[:space:]]|\$)" "$FILE"; then
                 : # properly mitigated (runtime disables on either flag)
               else
                 LINENUM=$(grep -nE "posthog" "$FILE" | head -1 | cut -d: -f1)
-                BLOCK_FINDINGS="${BLOCK_FINDINGS}BLOCK ${FILE}:${LINENUM}: posthog without valid opt-out value\n  Fix: OMO_DISABLE_POSTHOG: 1 and OMO_SEND_ANONYMOUS_TELEMETRY: 0\n"
+                BLOCK_FINDINGS="${BLOCK_FINDINGS}BLOCK ${FILE}:${LINENUM}: PostHog without valid opt-out value\n  Fix: OMO_DISABLE_POSTHOG: 1 and OMO_SEND_ANONYMOUS_TELEMETRY: 0\n"
               fi
             fi
 
-            # npx lazycodex - requires OMO_CODEX_DISABLE_POSTHOG or OMO_DISABLE_POSTHOG (truthy)
+            # lazycodex installer (via npx) - requires OMO_CODEX_DISABLE_POSTHOG or OMO_DISABLE_POSTHOG
             # Anchored name + value; single/double/no quotes accepted
             if grep -qE "npx.*lazycodex" "$FILE"; then
               if grep -qE "(^|[^a-zA-Z_])OMO_CODEX_DISABLE_POSTHOG[[:space:]]*:[[:space:]]*[\"']?(1|true|yes)[\"']?([[:space:]]|\$)|(^|[^a-zA-Z_])OMO_CODEX_DISABLE_POSTHOG=[\"']?(1|true|yes)[\"']?([[:space:]]|\$)" "$FILE" || \
@@ -82,7 +82,7 @@ jobs:
                 : # properly mitigated
               else
                 LINENUM=$(grep -nE "npx.*lazycodex" "$FILE" | head -1 | cut -d: -f1)
-                BLOCK_FINDINGS="${BLOCK_FINDINGS}BLOCK ${FILE}:${LINENUM}: npx lazycodex without OMO_CODEX_DISABLE_POSTHOG opt-out\n  Fix: OMO_CODEX_DISABLE_POSTHOG: 1 or OMO_DISABLE_POSTHOG: 1\n"
+                BLOCK_FINDINGS="${BLOCK_FINDINGS}BLOCK ${FILE}:${LINENUM}: lazycodex installer without OMO_CODEX_DISABLE_POSTHOG opt-out\n  Fix: OMO_CODEX_DISABLE_POSTHOG: 1 or OMO_DISABLE_POSTHOG: 1\n"
               fi
             fi
 
