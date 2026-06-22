@@ -43,6 +43,7 @@ const workflowExpectations = [
     ],
   },
   { path: ".github/workflows/refresh-model-capabilities.yml", jobs: ["refresh"] },
+  { path: ".github/workflows/network-firewall-guard.yml", jobs: ["guard"] },
   { path: ".github/workflows/sisyphus-agent.yml", jobs: ["agent"] },
   { path: ".github/workflows/web-ci.yml", jobs: ["format-lint-typecheck-build"] },
   { path: ".github/workflows/web-deploy.yml", jobs: ["deploy"] },

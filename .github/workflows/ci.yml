@@ -245,6 +245,9 @@ jobs:
           HOME: ${{ runner.temp }}/lazycodex-published-smoke/home
           CODEX_HOME: ${{ runner.temp }}/lazycodex-published-smoke/codex
           CODEX_LOCAL_BIN_DIR: ${{ runner.temp }}/lazycodex-published-smoke/bin
+          OMO_CODEX_DISABLE_POSTHOG: "1"
+          OMO_DISABLE_POSTHOG: "1"
+          OMO_SEND_ANONYMOUS_TELEMETRY: "0"
         run: |
           set -euo pipefail
           SMOKE_DIR=$(mktemp -d)

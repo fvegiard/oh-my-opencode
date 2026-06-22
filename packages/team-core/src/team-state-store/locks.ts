@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { open, readFile, rename, rm, unlink } from "node:fs/promises"
+import { access, open, readFile, rename, rm, unlink } from "node:fs/promises"
 
 import { tolerantFsync } from "../tolerant-fsync"
 
@@ -69,7 +69,17 @@ async function acquireLock(lockPath: string, ownerTag: string, staleAfterMs: num
       return
     } catch (error) {
       const err = error as NodeJS.ErrnoException
-      if (err.code !== "EEXIST") throw error
+      // EEXIST = file already exists (POSIX); EPERM on Windows (-4048) = file
+      // locked by another handle during exclusive-create — treat as contention
+      if (err.code !== "EEXIST" && err.code !== "EPERM") throw error
+
+      if (err.code === "EPERM") {
+        // EPERM can also mean a real permission error (unwritable directory).
+        // Distinguish: contention leaves the lock file present; a directory
+        // permission error leaves no file. Throw immediately if absent.
+        const lockExists = await access(lockPath).then(() => true, () => false)
+        if (!lockExists) throw error
+      }
 
       if (await detectStaleLock(lockPath, staleAfterMs)) {
         await reapStaleLock(lockPath)
